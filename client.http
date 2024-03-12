@@ -1,0 +1,31 @@
+@baseurl=http://localhost:8080
+
+###
+GET {{baseurl}} 
+
+
+###
+GET {{baseurl}}/collections
+
+
+### 
+POST {{baseurl}}/collections
+Content-Type: application/json
+
+{
+    "title": "Moving Humans",
+    "updateFrequency": 1000,
+    "description": "Data of moving humans",
+    "itemType": "moving feature"
+}
+
+### find existing collection
+GET {{baseurl}}/collections/moving_humans
+
+
+### non existing collection
+GET {{baseurl}}/collections/non_existing_collection
+
+
+###
+DELETE {{baseurl}}/collections/moving_humans
