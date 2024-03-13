@@ -177,8 +177,8 @@ class MyServer(BaseHTTPRequestHandler):
         print("limit: ", limit)
         print("subTraj: ", subTrajectory)
 
-        query = ("SELECT mmsi, trip FROM public.ships WHERE atstbox(trip, stbox 'SRID=25832;STBOX XT((({},{}), ({},{})),[{},{}])') IS NOT NULL LIMIT {} ;").format(x1,y1,x2,y2,dateTime1,dateTime2, limit)
-        query_count = ("SELECT count(trip) as count FROM public.ships WHERE atstbox(trip, stbox 'SRID=25832;STBOX XT((({},{}), ({},{})),[{},{}])') IS NOT NULL  ;").format(x1,y1,x2,y2,dateTime1,dateTime2)
+        query = ("SELECT mmsi, trip FROM public.{} WHERE atstbox(trip, stbox 'SRID=25832;STBOX XT((({},{}), ({},{})),[{},{}])') IS NOT NULL LIMIT {} ;").format(collectionId,x1,y1,x2,y2,dateTime1,dateTime2, limit)
+        query_count = ("SELECT count(trip) as count FROM public.{} WHERE atstbox(trip, stbox 'SRID=25832;STBOX XT((({},{}), ({},{})),[{},{}])') IS NOT NULL  ;").format(collectionId,x1,y1,x2,y2,dateTime1,dateTime2)
         cursor.execute(query)   
         
         row_count = cursor.rowcount
@@ -197,28 +197,40 @@ class MyServer(BaseHTTPRequestHandler):
             coordinates = []
             timestamps = []
             points = str(trip).split(", ")
+            
             for point_str in points:
             # Extract X, Y coordinates and timestamp from the POINT string
                 _, xy_str = point_str.split("(")
+                xy_str = xy_str.rstrip(")")
                 xy, timestamp = xy_str.split("@")
+                
+                
                 x, y = map(str ,xy.split())
+                y = y.split(')')[0]
             # Append coordinates as [x, y]
                 coordinates.append([x, y])
                 timestamps.append(timestamp)
             
+
+
             feature = {
                 "type": "Feature",
                 "id": str(mmsi),  # Assuming mmsi is numeric or string
                 "geometry": {
-                    "type": "LineString",
+                    "type": "TGeomPoint",
                     "coordinates": coordinates  # Assuming trip is a dictionary containing 'coordinates' key
                 },
                 "properties": {
                     "mmsi": mmsi  
                 },
                 "time": [
-                    timestamps[0],timestamps[-1]
-                ]
+                    timestamps[0],timestamps[-1].split(']')[0]
+                ],
+                "bbox":[x1,
+                        y1,
+                        x2,
+                        y2
+                ],
                 
             }
             features.append(feature)
