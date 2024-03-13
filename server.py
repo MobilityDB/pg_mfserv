@@ -177,18 +177,25 @@ class MyServer(BaseHTTPRequestHandler):
         print("limit: ", limit)
         print("subTraj: ", subTrajectory)
 
-       
-
         query = ("SELECT mmsi, trip FROM public.ships WHERE atstbox(trip, stbox 'SRID=25832;STBOX XT((({},{}), ({},{})),[{},{}])') IS NOT NULL LIMIT {} ;").format(x1,y1,x2,y2,dateTime1,dateTime2, limit)
+        query_count = ("SELECT count(trip) as count FROM public.ships WHERE atstbox(trip, stbox 'SRID=25832;STBOX XT((({},{}), ({},{})),[{},{}])') IS NOT NULL  ;").format(x1,y1,x2,y2,dateTime1,dateTime2)
         cursor.execute(query)   
-
-        features = []
         
-        data = cursor.fetchall()
+        row_count = cursor.rowcount
 
+        data = cursor.fetchall()
+        # Execute the query to get the count of rows
+        cursor.execute(query_count)
+        # Fetch the result of the count query
+        count_result = cursor.fetchone()
+        # Access the count value from the result
+        total_row_count = count_result[0]
+        
+        features = []
         for row in data:
             mmsi, trip = row
             coordinates = []
+            timestamps = []
             points = str(trip).split(", ")
             for point_str in points:
             # Extract X, Y coordinates and timestamp from the POINT string
@@ -197,6 +204,7 @@ class MyServer(BaseHTTPRequestHandler):
                 x, y = map(str ,xy.split())
             # Append coordinates as [x, y]
                 coordinates.append([x, y])
+                timestamps.append(timestamp)
             
             feature = {
                 "type": "Feature",
@@ -207,13 +215,13 @@ class MyServer(BaseHTTPRequestHandler):
                 },
                 "properties": {
                     "mmsi": mmsi  
-                }
+                },
+                "time": [
+                    timestamps[0],timestamps[-1]
+                ]
                 
             }
             features.append(feature)
-
-       
-
 
         # Construct the GeoJSON FeatureCollection
         geojson_data = {
@@ -235,8 +243,8 @@ class MyServer(BaseHTTPRequestHandler):
                 "properties": "urn:ogc:def:crs:EPSG::25832"
             },
             "timeStamp": "2020-01-01T12:00:00Z",
-            "numberMatched": 100,
-            "numberReturned": 10
+            "numberMatched": total_row_count,
+            "numberReturned": row_count
         }
 
          # Convert the GeoJSON data to a JSON string
@@ -248,17 +256,6 @@ class MyServer(BaseHTTPRequestHandler):
         self.send_header("Content-type", "application/json")
         self.end_headers()
         self.wfile.write(geojson_string.encode('utf-8'))
-
-
-        
-
-
-
-
-
-    
-
-
 
 
 
