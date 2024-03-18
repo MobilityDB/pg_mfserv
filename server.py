@@ -1,11 +1,13 @@
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pymeos.db.psycopg2 import MobilityDB
+import psycopg2
 from psycopg2 import sql
+from shapely.wkb import dumps
 import json
 import time
 import matplotlib.pyplot as plt
 import pandas as pd
-from pymeos import pymeos_initialize, pymeos_finalize, TGeogPointInst, TGeogPointSeq
+from pymeos import pymeos_initialize, pymeos_finalize, TGeomPoint, TPoint
 from urllib.parse import urlparse, parse_qs
 from shapely import wkt
 
@@ -190,8 +192,6 @@ class MyServer(BaseHTTPRequestHandler):
 
         data = cursor.fetchall()
 
-        print(data)
-
         # Execute the query to get the count of rows
         cursor.execute(query_count)
         # Fetch the result of the count query
@@ -206,6 +206,7 @@ class MyServer(BaseHTTPRequestHandler):
         for row in data:
             feature = json.loads(row[1])
             feature["id"] = row[0]
+            feature.pop("datetimes", None)
             features.append(feature)
 
 
@@ -233,17 +234,29 @@ class MyServer(BaseHTTPRequestHandler):
         try:
             content_length = int(self.headers['Content-Length']) # <--- Gets the size of data
             post_data = self.rfile.read(content_length)
-            print("POST request,\nPath: %s\nHeaders: %s\n\nBody: %s\n" % (self.path, self.headers, post_data.decode('utf-8')))
+            print("POST request,\nPath: %s\nHeaders: %s\n" % (self.path, self.headers))
 
-            data_dict = json.dumps(post_data.decode('utf-8'))
-            data_parsed = json.loads(data_dict)
+            data_dict = json.loads(post_data.decode('utf-8'))
+
+            mmsi = data_dict.get("id")
+
+            tempGeo =data_dict.get("temporalGeometry")
+            tGeomPoint = TGeomPoint.from_mfjson(json.dumps(tempGeo))
             
-            print(data_parsed)
+            sql_query = sql.SQL("INSERT INTO public.{table} VALUES({mmsi}, %s);").format(
+                table=sql.Identifier(collectionId),
+                mmsi=sql.Literal(mmsi)
+            )
+           
+            cursor.execute(sql_query, str(tempGeo))
+            connection.commit()
+            
             self.send_response(200)
             self.send_header("Content-type", "application/json")
             self.end_headers()
+
         except Exception as e:
-            self.handle_error(500, "Server Internal Error")
+            print(e)
 
 
 
