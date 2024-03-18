@@ -7,8 +7,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 from pymeos import pymeos_initialize, pymeos_finalize, TGeogPointInst, TGeogPointSeq
 from urllib.parse import urlparse, parse_qs
-from shapely.geometry import box
-from shapely.geometry import Polygon
+from shapely import wkt
 
 
 pymeos_initialize()
@@ -46,6 +45,12 @@ class MyServer(BaseHTTPRequestHandler):
     def do_POST(self):
         if self.path == '/collections':
             self.do_post_collection()
+        elif '/items' in self.path and self.path.startswith('/collections/'):
+           
+            # Extract collection ID from the path
+            collection_id = self.path.split('/')[2]
+            self.do_post_collection_items(collection_id)
+            
     
     def do_DELETE(self):
         if self.path.startswith('/collections/'):
@@ -177,13 +182,16 @@ class MyServer(BaseHTTPRequestHandler):
         print("limit: ", limit)
         print("subTraj: ", subTrajectory)
 
-        query = ("SELECT mmsi, trip FROM public.{} WHERE atstbox(trip, stbox 'SRID=25832;STBOX XT((({},{}), ({},{})),[{},{}])') IS NOT NULL LIMIT {} ;").format(collectionId,x1,y1,x2,y2,dateTime1,dateTime2, limit)
+        query = ("SELECT mmsi, asMFJSON(trip) FROM public.{} WHERE atstbox(trip, stbox 'SRID=25832;STBOX XT((({},{}), ({},{})),[{},{}])') IS NOT NULL LIMIT {};").format(collectionId,x1,y1,x2,y2,dateTime1,dateTime2, limit)
         query_count = ("SELECT count(trip) as count FROM public.{} WHERE atstbox(trip, stbox 'SRID=25832;STBOX XT((({},{}), ({},{})),[{},{}])') IS NOT NULL  ;").format(collectionId,x1,y1,x2,y2,dateTime1,dateTime2)
         cursor.execute(query)   
         
         row_count = cursor.rowcount
 
         data = cursor.fetchall()
+
+        print(data)
+
         # Execute the query to get the count of rows
         cursor.execute(query_count)
         # Fetch the result of the count query
@@ -191,70 +199,22 @@ class MyServer(BaseHTTPRequestHandler):
         # Access the count value from the result
         total_row_count = count_result[0]
         
+        
+        crs = json.loads(data[0][1])["crs"]
+
         features = []
         for row in data:
-            mmsi, trip = row
-            coordinates = []
-            timestamps = []
-            points = str(trip).split(", ")
-            
-            for point_str in points:
-            # Extract X, Y coordinates and timestamp from the POINT string
-                _, xy_str = point_str.split("(")
-                xy_str = xy_str.rstrip(")")
-                xy, timestamp = xy_str.split("@")
-                
-                
-                x, y = map(str ,xy.split())
-                y = y.split(')')[0]
-            # Append coordinates as [x, y]
-                coordinates.append([x, y])
-                timestamps.append(timestamp)
-            
-
-
-            feature = {
-                "type": "Feature",
-                "id": str(mmsi),  # Assuming mmsi is numeric or string
-                "geometry": {
-                    "type": "TGeomPoint",
-                    "coordinates": coordinates  # Assuming trip is a dictionary containing 'coordinates' key
-                },
-                "properties": {
-                    "mmsi": mmsi  
-                },
-                "time": [
-                    timestamps[0],timestamps[-1].split(']')[0]
-                ],
-                "bbox":[x1,
-                        y1,
-                        x2,
-                        y2
-                ],
-                
-            }
+            feature = json.loads(row[1])
+            feature["id"] = row[0]
             features.append(feature)
 
-        # Construct the GeoJSON FeatureCollection
-        geojson_data = {
-            "type": "FeatureCollection",
-            "features": features
-        }
 
         # Convert the GeoJSON data to a JSON string
-        
-
         geojson_data = {
+            "type": "FeatureCollection",
             "features" : features,
-            "crs": {
-                "type": "Name",
-                "properties": "urn:ogc:def:crs:EPSG::25832"
-            },
-            "trs": {
-                "type": "Name",
-                "properties": "urn:ogc:def:crs:EPSG::25832"
-            },
-            "timeStamp": "2020-01-01T12:00:00Z",
+            "crs": crs,
+            "timeStamp": "To be defined",
             "numberMatched": total_row_count,
             "numberReturned": row_count
         }
@@ -262,12 +222,28 @@ class MyServer(BaseHTTPRequestHandler):
          # Convert the GeoJSON data to a JSON string
         geojson_string = json.dumps(geojson_data)
 
-        
         # Define the coordinates of the polygon's vertices
         self.send_response(200)
         self.send_header("Content-type", "application/json")
         self.end_headers()
         self.wfile.write(geojson_string.encode('utf-8'))
+    
+
+    def do_post_collection_items(self, collectionId):
+        try:
+            content_length = int(self.headers['Content-Length']) # <--- Gets the size of data
+            post_data = self.rfile.read(content_length)
+            print("POST request,\nPath: %s\nHeaders: %s\n\nBody: %s\n" % (self.path, self.headers, post_data.decode('utf-8')))
+
+            data_dict = json.dumps(post_data.decode('utf-8'))
+            data_parsed = json.loads(data_dict)
+            
+            print(data_parsed)
+            self.send_response(200)
+            self.send_header("Content-type", "application/json")
+            self.end_headers()
+        except Exception as e:
+            self.handle_error(500, "Server Internal Error")
 
 
 
