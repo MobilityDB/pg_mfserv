@@ -2,14 +2,9 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 
 from pymeos.db.psycopg2 import MobilityDB
 from psycopg2 import sql
-from shapely.wkb import dumps
 import json
-import time
-import matplotlib.pyplot as plt
-import pandas as pd
-from pymeos import pymeos_initialize, pymeos_finalize, TGeomPoint, TPoint, TGeomPointSeq
+from pymeos import pymeos_initialize, pymeos_finalize, TGeomPoint
 from urllib.parse import urlparse, parse_qs
-from shapely import wkt
 
 pymeos_initialize()
 
@@ -27,19 +22,20 @@ cursor = connection.cursor()
 
 
 class MyServer(BaseHTTPRequestHandler):
-    # GET requests router
     def do_GET(self):
         if self.path == '/':
             self.do_home()
         elif self.path == '/collections':
             self.do_collections()
+        elif self.path.startswith('/collections') and '/items/' in self.path:
+            collectionId = self.path.split('/')[2]
+            feature_id = self.path.split('/')[-1]
+            self.do_get_meta_data(collectionId, feature_id)
         elif '/items' in self.path and self.path.startswith('/collections/'):
-            # Extract collection ID and mFeatureId from the path
-            components = self.path.split('/')
-            collection_id = components[2]
-            mfeature_id = components[4]
-            self.do_get_meta_data(collection_id, mfeature_id)
-        elif '/collections' in self.path and self.path.startswith('/collections/'):
+            # Extract collection ID from the path
+            collection_id = self.path.split('/')[2]
+            self.do_get_collection_items(collection_id)
+        elif self.path.startswith('/collections/'):
             # Extract collection ID from the path
             collection_id = self.path.split('/')[-1]
             self.do_collection_id(collection_id)
@@ -55,9 +51,15 @@ class MyServer(BaseHTTPRequestHandler):
             self.do_post_collection_items(collection_id)
 
     def do_DELETE(self):
-        if self.path.startswith('/collections/'):
+        if self.path.startswith('/collections/') and 'items' not in self.path:
             collection_id = self.path.split('/')[-1]
             self.do_delete_collection(collection_id)
+        elif '/items' in self.path and self.path.startswith('/collections/'):
+            # Extract collection ID and mFeatureId from the path
+            components = self.path.split('/')
+            collection_id = components[2]
+            mfeature_id = components[4]
+            self.do_delete_feature(collection_id, mfeature_id)
 
     def do_PUT(self):
         if self.path.startswith('/collections/'):
@@ -262,22 +264,41 @@ class MyServer(BaseHTTPRequestHandler):
         except Exception as e:
             self.handle_error(400 if "DataError" in str(e) else 404 if "does not exist" in str(e) else 500, str(e))
 
-
     def do_get_meta_data(self, collecitonId, featureId):
-        print("POST request,\nPath: %s\nHeaders: %s\n" % (self.path, self.headers))
+        print("GET request,\nPath: %s\nHeaders: %s\n" % (self.path, self.headers))
         try:
             sqlString = f"SELECT asMFJSON(trip) FROM public.{collecitonId} WHERE mmsi={featureId};"
             cursor.execute(sqlString)
 
             rs = cursor.fetchall()
-            data = json.loads(rs[3][0])
+            if len(rs) == 0:
+                raise Exception("feature does not exist")
+            data = json.loads(rs[0][0])
 
             self.send_response(200)
             self.send_header("Content-type", "application/json")
             self.end_headers()
-            self.wfile.write(bytes(json.dumps(data),'utf-8'))
+            self.wfile.write(bytes(json.dumps(data), 'utf-8'))
         except Exception as e:
-            self.handle_error(404 if "does not exist" in str(e) else 500, "Collection or Item does not exist" if "does not exist" in str(e) else "Server Internal Error")
+            self.handle_error(404 if "does not exist" in str(e) else 500,
+                              "Collection or Feature does not exist" if "does not exist" in str(
+                                  e) else str(e))
+
+    def do_delete_feature(self, collection_id, mfeature_id):
+        try:
+            print("GET request,\nPath: %s\nHeaders: %s\n" % (self.path, self.headers))
+            sqlString = f"DELETE FROM public.{collection_id} WHERE mmsi={mfeature_id}"
+            cursor.execute(sqlString)
+            connection.commit()
+
+            self.send_response(204)
+            self.send_header("Content-type", "application/json")
+            self.end_headers()
+        except Exception as e:
+            self.handle_error(404 if "does not exist" in str(e) else 500,
+                              "Collection or Item does not exist" if "does not exist" in str(
+                                  e) else "Server Internal Error")
+
 
 if __name__ == "__main__":
     webServer = HTTPServer((hostName, serverPort), MyServer)
