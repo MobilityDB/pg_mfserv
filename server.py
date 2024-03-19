@@ -34,10 +34,12 @@ class MyServer(BaseHTTPRequestHandler):
         elif self.path == '/collections':
             self.do_collections()
         elif '/items' in self.path and self.path.startswith('/collections/'):
-            # Extract collection ID from the path
-            collection_id = self.path.split('/')[2]
-            self.do_get_collection_items(collection_id)
-        elif self.path.startswith('/collections/'):
+            # Extract collection ID and mFeatureId from the path
+            components = self.path.split('/')
+            collection_id = components[2]
+            mfeature_id = components[4]
+            self.do_get_meta_data(collection_id, mfeature_id)
+        elif '/collections' in self.path and self.path.startswith('/collections/'):
             # Extract collection ID from the path
             collection_id = self.path.split('/')[-1]
             self.do_collection_id(collection_id)
@@ -196,9 +198,7 @@ class MyServer(BaseHTTPRequestHandler):
             "SELECT count(trip) as count FROM public.{} WHERE atstbox(trip, stbox 'SRID=25832;STBOX XT((({},{}), ({},{})),[{},{}])') IS NOT NULL  ;").format(
             collectionId, x1, y1, x2, y2, dateTime1, dateTime2)
         cursor.execute(query)
-
         row_count = cursor.rowcount
-
         data = cursor.fetchall()
 
         # Execute the query to get the count of rows
@@ -243,16 +243,11 @@ class MyServer(BaseHTTPRequestHandler):
             print("POST request,\nPath: %s\nHeaders: %s\n" % (self.path, self.headers))
 
             data_dict = json.loads(post_data.decode('utf-8'))
-
             mmsi = data_dict.get("id")
-
             tempGeo = data_dict.get("temporalGeometry")
-
-            print(tempGeo)
 
             if tempGeo is None:
                 raise Exception("DataError")
-
 
             tGeomPoint = TGeomPoint.from_mfjson(json.dumps(tempGeo))
             string_query = f"INSERT INTO public.{collectionId} VALUES({mmsi}, '{tGeomPoint}');"
@@ -267,6 +262,22 @@ class MyServer(BaseHTTPRequestHandler):
         except Exception as e:
             self.handle_error(400 if "DataError" in str(e) else 404 if "does not exist" in str(e) else 500, str(e))
 
+
+    def do_get_meta_data(self, collecitonId, featureId):
+        print("POST request,\nPath: %s\nHeaders: %s\n" % (self.path, self.headers))
+        try:
+            sqlString = f"SELECT asMFJSON(trip) FROM public.{collecitonId} WHERE mmsi={featureId};"
+            cursor.execute(sqlString)
+
+            rs = cursor.fetchall()
+            data = json.loads(rs[3][0])
+
+            self.send_response(200)
+            self.send_header("Content-type", "application/json")
+            self.end_headers()
+            self.wfile.write(bytes(json.dumps(data),'utf-8'))
+        except Exception as e:
+            self.handle_error(404 if "does not exist" in str(e) else 500, "Collection or Item does not exist" if "does not exist" in str(e) else "Server Internal Error")
 
 if __name__ == "__main__":
     webServer = HTTPServer((hostName, serverPort), MyServer)
