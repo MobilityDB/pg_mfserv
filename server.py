@@ -42,8 +42,9 @@ class MyServer(BaseHTTPRequestHandler):
             collection_id = self.path.split('/')[-1]
             self.do_collection_id(collection_id)
     def do_get_squence(self):
-        if self.path.endswith('tgsequence'):
-            self.do_get_movement_single_moving_feature()
+            collection_id = self.path.split('/')[2]
+            feature_id = self.path.split('/')[4]
+            self.do_get_movement_single_moving_feature(collection_id, feature_id)
 
     # POST requests router
     def do_POST(self):
@@ -230,7 +231,7 @@ class MyServer(BaseHTTPRequestHandler):
             feature["id"] = row[0]
             feature.pop("datetimes", None)
             features.append(feature)
-
+            print(feature)
         # Convert the GeoJSON data to a JSON string
         geojson_data = {
             "type": "FeatureCollection",
@@ -312,11 +313,60 @@ class MyServer(BaseHTTPRequestHandler):
                                   e) else "Server Internal Error")
 
 
-    def do_get_movement_single_moving_feature(self):
+    def do_get_movement_single_moving_feature(self, collectionId, featureId):
+        try:
+            parsed_url = urlparse(self.path)
+            query_params = parse_qs(parsed_url.query)
 
-        self.send_response(200)
-        self.send_header("Content-type", "application/json")
-        self.end_headers()
+            limit = 10 if query_params.get('limit') is None else query_params.get('limit')[0]
+            x1, y1, x2, y2 = query_params.get('x1')[0], query_params.get('y1')[0], query_params.get('x2')[0], \
+                query_params.get('y2')[0]
+            subTrajectory = query_params.get('subTrajectory')[0]
+            dateTime = query_params.get('dateTime')
+            leaf = query_params.get('leaf')
+
+            dateTime1 = dateTime[0].split(',')[0]
+            dateTime2 = dateTime[0].split(',')[1]
+
+            sqlString = f"SELECT mmsi, asMFJSON(trip) FROM public.{collectionId} WHERE atstbox(trip, stbox 'SRID=25832;STBOX XT((({x1},{y1}), ({x2},{y2})),[{dateTime1},{dateTime2}])') IS NOT NULL AND mmsi={featureId} LIMIT {limit};"
+            cursor.execute(sqlString)
+
+            rs = cursor.fetchall()
+            movements = []
+            for row in rs:
+                json_data = json.loads(row[1])  # Assuming the JSON data is in the second column of each row
+                movements.append(json_data)
+
+            full_json = {
+              "type": "TemporalGeometrySequence",
+              "geometrySequence": [
+                    movements
+              ],
+              "links": [
+                {
+                  "href": "https://data.example.org/collections/mfc-1/items/mf-1/tgsequence",
+                  "rel": "self",
+                  "type": "application/json"
+                },
+                {
+                  "href": "https://data.example.org/collections/mfc-1/items/mf-1/tgsequence&offset=10&limit=1",
+                  "rel": "next",
+                  "type": "application/json"
+                }
+              ],
+              "timeStamp": "2021-09-01T12:00:00Z",
+              "numberMatched": 100,
+              "numberReturned": 1
+            }
+
+
+            self.send_response( 200)
+            self.send_header("Content-type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps(full_json).encode('utf-8'))
+
+        except Exception as e:
+            self.handle_error(400, str(e))
 
     def do_add_movement_data_in_mf(self):
         self.send_response(200)
