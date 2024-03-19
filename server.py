@@ -23,7 +23,9 @@ cursor = connection.cursor()
 
 class MyServer(BaseHTTPRequestHandler):
     def do_GET(self):
-        if self.path == '/':
+        if 'tgsequence' in self.path:
+            self.do_get_squence()
+        elif self.path == '/':
             self.do_home()
         elif self.path == '/collections':
             self.do_collections()
@@ -39,19 +41,27 @@ class MyServer(BaseHTTPRequestHandler):
             # Extract collection ID from the path
             collection_id = self.path.split('/')[-1]
             self.do_collection_id(collection_id)
+    def do_get_squence(self):
+        if self.path.endswith('tgsequence'):
+            self.do_get_movement_single_moving_feature()
 
     # POST requests router
     def do_POST(self):
-        if self.path == '/collections':
+        if 'tgsequence'in self.path:
+            self.do_post_sequence()
+        elif self.path == '/collections':
             self.do_post_collection()
         elif '/items' in self.path and self.path.startswith('/collections/'):
-
-            # Extract collection ID from the path
             collection_id = self.path.split('/')[2]
             self.do_post_collection_items(collection_id)
 
+    def do_post_sequence(self):
+        self.do_add_movement_data_in_mf()
+
     def do_DELETE(self):
-        if self.path.startswith('/collections/') and 'items' not in self.path:
+        if 'tgsequence'in self.path:
+            self.do_delete_sequence()
+        elif self.path.startswith('/collections/') and 'items' not in self.path:
             collection_id = self.path.split('/')[-1]
             self.do_delete_collection(collection_id)
         elif '/items' in self.path and self.path.startswith('/collections/'):
@@ -61,6 +71,8 @@ class MyServer(BaseHTTPRequestHandler):
             mfeature_id = components[4]
             self.do_delete_feature(collection_id, mfeature_id)
 
+    def do_delete_sequence(self):
+        self.do_delete_single_temporal_primitive_geo()
     def do_PUT(self):
         if self.path.startswith('/collections/'):
             collection_id = self.path.split('/')[-1]
@@ -299,6 +311,22 @@ class MyServer(BaseHTTPRequestHandler):
                               "Collection or Item does not exist" if "does not exist" in str(
                                   e) else "Server Internal Error")
 
+
+    def do_get_movement_single_moving_feature(self):
+
+        self.send_response(200)
+        self.send_header("Content-type", "application/json")
+        self.end_headers()
+
+    def do_add_movement_data_in_mf(self):
+        self.send_response(200)
+        self.send_header("Content-type", "application/json")
+        self.end_headers()
+
+    def do_delete_single_temporal_primitive_geo(self):
+        self.send_response(200)
+        self.send_header("Content-type", "application/json")
+        self.end_headers()
 
 if __name__ == "__main__":
     webServer = HTTPServer((hostName, serverPort), MyServer)
