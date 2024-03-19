@@ -1,13 +1,13 @@
 from http.server import BaseHTTPRequestHandler, HTTPServer
+
 from pymeos.db.psycopg2 import MobilityDB
-import psycopg2
 from psycopg2 import sql
 from shapely.wkb import dumps
 import json
 import time
 import matplotlib.pyplot as plt
 import pandas as pd
-from pymeos import pymeos_initialize, pymeos_finalize, TGeomPoint, TPoint
+from pymeos import pymeos_initialize, pymeos_finalize, TGeomPoint, TPoint, TGeomPointSeq
 from urllib.parse import urlparse, parse_qs
 from shapely import wkt
 
@@ -179,7 +179,7 @@ class MyServer(BaseHTTPRequestHandler):
         print("x1:", x1)  
         print("y1:", y1)  
         print("x2:", x2)  
-        print("y2:", y2)    
+        print("y2:", y2)       
         print("DateTime: ", dateTime1, "  ", dateTime2)
         print("limit: ", limit)
         print("subTraj: ", subTrajectory)
@@ -240,15 +240,14 @@ class MyServer(BaseHTTPRequestHandler):
 
             mmsi = data_dict.get("id")
 
-            tempGeo =data_dict.get("temporalGeometry")
-            tGeomPoint = TGeomPoint.from_mfjson(json.dumps(tempGeo))
+            tempGeo = data_dict.get("temporalGeometry")
             
-            sql_query = sql.SQL("INSERT INTO public.{table} VALUES({mmsi}, %s);").format(
-                table=sql.Identifier(collectionId),
-                mmsi=sql.Literal(mmsi)
-            )
+            
+            tGeomPoint = TGeomPoint.from_mfjson(json.dumps(tempGeo))
+            print(TGeomPointSeq)
+            string_query = f"INSERT INTO public.{collectionId} VALUES({mmsi}, '{tGeomPoint}');"
            
-            cursor.execute(sql_query, str(tempGeo))
+            cursor.execute(string_query)
             connection.commit()
             
             self.send_response(200)
