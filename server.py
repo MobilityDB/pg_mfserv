@@ -228,6 +228,10 @@ class MyServer(BaseHTTPRequestHandler):
         features = []
         for row in data:
             feature = json.loads(row[1])
+            print(feature)
+            tPoint = TGeomPoint.from_mfjson(json.dumps(feature))
+            bbox = tPoint.bounding_box()
+            feature["bbox"] = [bbox.xmin(),bbox.ymin(),bbox.xmax(),bbox.ymax()]
             feature["id"] = row[0]
             feature.pop("datetimes", None)
             features.append(feature)
