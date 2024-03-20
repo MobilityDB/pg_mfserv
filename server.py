@@ -1,5 +1,6 @@
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
+import requests
 from pymeos.db.psycopg2 import MobilityDB
 from psycopg2 import sql
 import json
@@ -41,14 +42,15 @@ class MyServer(BaseHTTPRequestHandler):
             # Extract collection ID from the path
             collection_id = self.path.split('/')[-1]
             self.do_collection_id(collection_id)
+
     def do_get_squence(self):
-            collection_id = self.path.split('/')[2]
-            feature_id = self.path.split('/')[4]
-            self.do_get_movement_single_moving_feature(collection_id, feature_id)
+        collection_id = self.path.split('/')[2]
+        feature_id = self.path.split('/')[4]
+        self.do_get_movement_single_moving_feature(collection_id, feature_id)
 
     # POST requests router
     def do_POST(self):
-        if 'tgsequence'in self.path:
+        if 'tgsequence' in self.path:
             self.do_post_sequence()
         elif self.path == '/collections':
             self.do_post_collection()
@@ -57,10 +59,12 @@ class MyServer(BaseHTTPRequestHandler):
             self.do_post_collection_items(collection_id)
 
     def do_post_sequence(self):
-        self.do_add_movement_data_in_mf()
+        collection_id = self.path.split('/')[2]
+        feature_id = self.path.split('/')[4]
+        self.do_add_movement_data_in_mf(collection_id, feature_id)
 
     def do_DELETE(self):
-        if 'tgsequence'in self.path:
+        if 'tgsequence' in self.path:
             self.do_delete_sequence()
         elif self.path.startswith('/collections/') and 'items' not in self.path:
             collection_id = self.path.split('/')[-1]
@@ -74,6 +78,7 @@ class MyServer(BaseHTTPRequestHandler):
 
     def do_delete_sequence(self):
         self.do_delete_single_temporal_primitive_geo()
+
     def do_PUT(self):
         if self.path.startswith('/collections/'):
             collection_id = self.path.split('/')[-1]
@@ -231,7 +236,7 @@ class MyServer(BaseHTTPRequestHandler):
             print(feature)
             tPoint = TGeomPoint.from_mfjson(json.dumps(feature))
             bbox = tPoint.bounding_box()
-            feature["bbox"] = [bbox.xmin(),bbox.ymin(),bbox.xmax(),bbox.ymax()]
+            feature["bbox"] = [bbox.xmin(), bbox.ymin(), bbox.xmax(), bbox.ymax()]
             feature["id"] = row[0]
             feature.pop("datetimes", None)
             features.append(feature)
@@ -266,7 +271,7 @@ class MyServer(BaseHTTPRequestHandler):
             tempGeo = data_dict.get("temporalGeometry")
 
             if tempGeo is None:
-                raise Exception("DataError")
+               raise Exception("DataError")
 
             tGeomPoint = TGeomPoint.from_mfjson(json.dumps(tempGeo))
             string_query = f"INSERT INTO public.{collectionId} VALUES({mmsi}, '{tGeomPoint}');"
@@ -316,23 +321,28 @@ class MyServer(BaseHTTPRequestHandler):
                               "Collection or Item does not exist" if "does not exist" in str(
                                   e) else "Server Internal Error")
 
-
     def do_get_movement_single_moving_feature(self, collectionId, featureId):
         try:
             parsed_url = urlparse(self.path)
             query_params = parse_qs(parsed_url.query)
 
             limit = 10 if query_params.get('limit') is None else query_params.get('limit')[0]
-            x1, y1, x2, y2 = query_params.get('x1')[0], query_params.get('y1')[0], query_params.get('x2')[0], \
-                query_params.get('y2')[0]
-            subTrajectory = query_params.get('subTrajectory')[0]
-            dateTime = query_params.get('dateTime')
-            leaf = query_params.get('leaf')
+            x1, y1, x2, y2 = query_params.get('x1', [None])[0], query_params.get('y1', [None])[0], \
+            query_params.get('x2', [None])[0], query_params.get('y2', [None])[0]
+            if x1 or y1 or x2 or y2 is None:
 
-            dateTime1 = dateTime[0].split(',')[0]
-            dateTime2 = dateTime[0].split(',')[1]
 
-            sqlString = f"SELECT mmsi, asMFJSON(trip) FROM public.{collectionId} WHERE atstbox(trip, stbox 'SRID=25832;STBOX XT((({x1},{y1}), ({x2},{y2})),[{dateTime1},{dateTime2}])') IS NOT NULL AND mmsi={featureId} LIMIT {limit};"
+                sqlString = f"SELECT mmsi, asMFJSON(trip) FROM public.{collectionId} WHERE mmsi={featureId} LIMIT {limit};"
+            else:
+                dateTime = query_params.get('dateTime')
+                dateTime1 = dateTime[0].split(',')[0]
+                dateTime2 = dateTime[0].split(',')[-1]
+                print(dateTime1, dateTime2)
+                sqlString = f"SELECT mmsi, asMFJSON(trip) FROM public.{collectionId} WHERE atstbox(trip, stbox 'SRID=25832;STBOX XT((({x1},{y1}), ({x2},{y2})),[{dateTime1},{dateTime2}])') IS NOT NULL AND mmsi={featureId} LIMIT {limit};"
+
+            subTrajectory = query_params.get('subTrajectory', [None])[0]
+            leaf = query_params.get('leaf',[None])
+
             cursor.execute(sqlString)
 
             rs = cursor.fetchall()
@@ -342,45 +352,68 @@ class MyServer(BaseHTTPRequestHandler):
                 movements.append(json_data)
 
             full_json = {
-              "type": "TemporalGeometrySequence",
-              "geometrySequence": [
+                "type": "TemporalGeometrySequence",
+                "geometrySequence": [
                     movements
-              ],
-              "links": [
-                {
-                  "href": "https://data.example.org/collections/mfc-1/items/mf-1/tgsequence",
-                  "rel": "self",
-                  "type": "application/json"
-                },
-                {
-                  "href": "https://data.example.org/collections/mfc-1/items/mf-1/tgsequence&offset=10&limit=1",
-                  "rel": "next",
-                  "type": "application/json"
-                }
-              ],
-              "timeStamp": "2021-09-01T12:00:00Z",
-              "numberMatched": 100,
-              "numberReturned": 1
+                ],
+                "links": [
+                    {
+                        "href": "https://data.example.org/collections/mfc-1/items/mf-1/tgsequence",
+                        "rel": "self",
+                        "type": "application/json"
+                    },
+                    {
+                        "href": "https://data.example.org/collections/mfc-1/items/mf-1/tgsequence&offset=10&limit=1",
+                        "rel": "next",
+                        "type": "application/json"
+                    }
+                ],
+                "timeStamp": "2021-09-01T12:00:00Z",
+                "numberMatched": 100,
+                "numberReturned": 1
             }
-
-
-            self.send_response( 200)
+            print(full_json)
+            self.send_response(200)
             self.send_header("Content-type", "application/json")
             self.end_headers()
             self.wfile.write(json.dumps(full_json).encode('utf-8'))
+            return full_json
+        except Exception as e:
+            print(str(e))
+            self.handle_error(400, str(e))
 
+    def do_add_movement_data_in_mf(self, collectionId, featureId):
+        try:
+
+            print("POST request,\nPath: %s\nHeaders: %s\n" % (self.path, self.headers))
+
+            content_length = int(self.headers['Content-Length'])  # <--- Gets the size of data
+            post_data = self.rfile.read(content_length)
+            data_dict = json.loads(post_data.decode('utf-8'))
+            datetimes = data_dict.get("datetimes")
+            print(datetimes)
+
+            json.dumps(data_dict)
+            tgeompoint = TGeomPoint.from_mfjson(json.dumps(data_dict))
+
+            print(tgeompoint) #voir si c bon
+
+            sqlString = f"UPDATE public.{collectionId} SET trip= merge(trip, '{tgeompoint}') where mmsi = {featureId}"
+            cursor.execute(sqlString)
+
+
+
+            self.send_response(200)
+            self.send_header("Content-type", "application/json")
+            self.end_headers()
         except Exception as e:
             self.handle_error(400, str(e))
 
-    def do_add_movement_data_in_mf(self):
+    def do_delete_single_temporal_primitive_geo(self, collectionId, featureId):
         self.send_response(200)
         self.send_header("Content-type", "application/json")
         self.end_headers()
 
-    def do_delete_single_temporal_primitive_geo(self):
-        self.send_response(200)
-        self.send_header("Content-type", "application/json")
-        self.end_headers()
 
 if __name__ == "__main__":
     webServer = HTTPServer((hostName, serverPort), MyServer)
