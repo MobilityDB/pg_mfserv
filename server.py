@@ -255,14 +255,14 @@ class MyServer(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(geojson_string.encode('utf-8'))
 
-    def do_get_meta_data(self, collecitonId, featureId):
+    def do_get_meta_data(self, collectionId, featureId):
         print("GET request,\nPath: %s\nHeaders: %s\n" % (self.path, self.headers))
         columns = self.column_discovery(collectionId)
         id = columns[0][0]
         trip = columns[1][0]
 
         try:
-            sqlString = f"SELECT asMFJSON({trip}) FROM public.{collecitonId} WHERE {id}={featureId};"
+            sqlString = f"SELECT asMFJSON({trip}) FROM public.{collectionId} WHERE {id}={featureId};"
             cursor.execute(sqlString)
 
             rs = cursor.fetchall()
@@ -318,31 +318,33 @@ class MyServer(BaseHTTPRequestHandler):
                 "numberMatched": 100,
                 "numberReturned": 1
             }
+
             self.send_response(200)
             self.send_header("Content-type", "application/json")
             self.end_headers()
             self.wfile.write(json.dumps(full_json).encode('utf-8'))
             return full_json
-        
+
         except Exception as e:
             print(str(e))
             self.handle_error(400, str(e))
 
     def do_post_collection_items(self, collectionId):
+
         try:
             content_length = int(self.headers['Content-Length'])  # <--- Gets the size of data
             post_data = self.rfile.read(content_length)
             print("POST request,\nPath: %s\nHeaders: %s\n" % (self.path, self.headers))
 
             data_dict = json.loads(post_data.decode('utf-8'))
-            mmsi = data_dict.get("id")
-            # tempGeo = data_dict.get("temporalGeometry")
+            feat_id = data_dict.get("id")
+            tempGeo = data_dict.get("temporalGeometry")
 
-            # if tempGeo is None:
-            #   raise Exception("DataError")
+            if tempGeo is None:
+               raise Exception("DataError")
 
-            tGeomPoint = TGeomPoint.from_mfjson(json.dumps(data_dict))
-            string_query = f"INSERT INTO public.{collectionId} VALUES({mmsi}, '{tGeomPoint}');"
+            tGeomPoint = TGeomPoint.from_mfjson(json.dumps(tempGeo))
+            string_query = f"INSERT INTO public.{collectionId} VALUES({feat_id}, '{tGeomPoint}');"
 
             cursor.execute(string_query)
             connection.commit()
@@ -355,10 +357,13 @@ class MyServer(BaseHTTPRequestHandler):
             self.handle_error(400 if "DataError" in str(e) else 404 if "does not exist" in str(e) else 500, str(e))
 
     def do_add_movement_data_in_mf(self, collectionId, featureId):
+        columns = self.column_discovery(collectionId)
+        id = columns[0][0]
+        trip = columns[1][0]
+
         try:
 
             print("POST request,\nPath: %s\nHeaders: %s\n" % (self.path, self.headers))
-
             content_length = int(self.headers['Content-Length'])  # <--- Gets the size of data
             post_data = self.rfile.read(content_length)
             data_dict = json.loads(post_data.decode('utf-8'))
@@ -366,7 +371,7 @@ class MyServer(BaseHTTPRequestHandler):
             json.dumps(data_dict)
             tgeompoint = TGeomPoint.from_mfjson(json.dumps(data_dict))
 
-            sqlString = f"UPDATE public.{collectionId} SET trip= merge(trip, '{tgeompoint}') where mmsi = {featureId}"
+            sqlString = f"UPDATE public.{collectionId} SET {trip}= merge({trip}, '{tgeompoint}') where {id} = {featureId}"
             cursor.execute(sqlString)
 
             self.send_response(200)
@@ -376,9 +381,11 @@ class MyServer(BaseHTTPRequestHandler):
             self.handle_error(400, str(e))
 
     def do_delete_feature(self, collection_id, mfeature_id):
+        columns = self.column_discovery(collectionId)
+        id = columns[0][0]
         try:
             print("GET request,\nPath: %s\nHeaders: %s\n" % (self.path, self.headers))
-            sqlString = f"DELETE FROM public.{collection_id} WHERE mmsi={mfeature_id}"
+            sqlString = f"DELETE FROM public.{collection_id} WHERE {id}={mfeature_id}"
             cursor.execute(sqlString)
             connection.commit()
 
