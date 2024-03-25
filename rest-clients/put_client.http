@@ -1,0 +1,21 @@
+@baseurl=http://localhost:8080
+
+### update existing collection
+PUT {{baseurl}}/collections/moving_humans
+
+{
+    "title": "Moving Man",
+    "updateFrequency": 100,
+    "description": "Data of moving men",
+    "itemType": "moving feature"
+}
+
+### update non-existing collection
+PUT {{baseurl}}/collections/non_existing_collection
+
+{
+    "title": "Moving Man",
+    "updateFrequency": 100,
+    "description": "Data of moving men",
+    "itemType": "moving feature"
+}

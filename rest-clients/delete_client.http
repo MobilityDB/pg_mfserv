@@ -1,0 +1,10 @@
+@baseurl=http://localhost:8080
+
+### delete existing collection
+DELETE {{baseurl}}/collections/moving_humans
+
+### delete feature wiht id 25
+DELETE {{baseurl}}/collections/ships/items/25
+
+### delete movement about a single feature
+DELETE {{baseurl}}/collections/ships/items/25/tgsequence

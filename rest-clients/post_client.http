@@ -1,0 +1,124 @@
+@baseurl=http://localhost:8080
+
+
+
+###
+POST {{baseurl}}/collections
+Content-Type: application/json
+
+{
+  "title": "Moving Humans",
+  "updateFrequency": 1000,
+  "description": "Data of moving humans",
+  "itemType": "moving feature"
+}
+
+### post invalid item
+POST {{baseurl}}/collections/ships/items
+Content-Type: application/json
+
+{
+  "No data": "invalid data"
+}
+
+### add item to collection
+POST {{baseurl}}/collections/ships/items
+Content-Type: application/json
+
+{
+"temporalGeometry": {
+  "type": "MovingPoint",
+  "crs": {
+    "type": "Name",
+    "properties": {
+      "name": "EPSG:25832"
+    }
+  },
+  "coordinates": [
+    [
+      727083.3918905254,
+      6178304.059568562
+    ],
+    [
+      727083.3918905254,
+      6178304.059568562
+    ]
+  ],
+  "datetimes": [
+    "2024-09-03T00:00:01+00",
+    "2024-09-03T23:59:51+00"
+  ],
+  "lower_inc": true,
+  "upper_inc": true,
+  "interpolation": "Linear"
+ },
+  "id": 25
+}
+
+### add movement to a single feature
+POST {{baseurl}}/collections/ships/items/25/tgsequence
+
+{
+  "type": "MovingPoint",
+  "crs": {
+    "type": "Name",
+    "properties": {
+      "name": "EPSG:25832"
+    }
+  },
+  "coordinates": [
+    [
+      727083.3918905254,
+      6178304.059568562
+    ],
+    [
+      727083.3918905254,
+      6178304.059568562
+    ]
+  ],
+  "datetimes": [
+    "2024-09-05T00:00:01+00",
+    "2024-09-05T23:59:51+00"
+  ],
+  "lower_inc": true,
+  "upper_inc": true,
+  "interpolation": "Linear"
+}
+
+### add item to collection
+POST {{baseurl}}/collections/ships/items
+Content-Type: application/json
+
+{
+  "crs": {
+    "type": "Name",
+    "properties": {
+      "name": "urn:ogc:def:crs:OGC:1.3:CRS84"
+    }
+  },
+  "type": "MovingPoint",
+  "crs": {
+    "type": "Name",
+    "properties": {
+      "name": "EPSG:25832"
+    }
+  },
+  "coordinates": [
+    [
+      727083.3918905254,
+      6178304.059568562
+    ],
+    [
+      727083.3918905254,
+      6178304.059568562
+    ]
+  ],
+  "datetimes": [
+    "2024-09-04T00:00:01+00",
+    "2024-09-04T23:59:51+00"
+  ],
+  "lower_inc": true,
+  "upper_inc": true,
+  "interpolation": "Linear",
+  "id": 1
+}
