@@ -61,6 +61,7 @@ class MyServer(BaseHTTPRequestHandler):
     def do_post_sequence(self):
         collection_id = self.path.split('/')[2]
         feature_id = self.path.split('/')[4]
+
         self.do_add_movement_data_in_mf(collection_id, feature_id)
 
     def do_DELETE(self):
@@ -77,7 +78,11 @@ class MyServer(BaseHTTPRequestHandler):
             self.do_delete_feature(collection_id, mfeature_id)
 
     def do_delete_sequence(self):
-        self.do_delete_single_temporal_primitive_geo()
+        components = self.path.split('/')
+        collection_id = components[2]
+        mfeature_id = components[4]
+        tGeometry_id = self.path.split('/')[6]
+        self.do_delete_single_temporal_primitive_geo(collection_id, mfeature_id, tGeometry_id)
 
     def do_PUT(self):
         if self.path.startswith('/collections/'):
@@ -362,14 +367,15 @@ class MyServer(BaseHTTPRequestHandler):
         trip = columns[1][0]
 
         try:
-
             print("POST request,\nPath: %s\nHeaders: %s\n" % (self.path, self.headers))
             content_length = int(self.headers['Content-Length'])  # <--- Gets the size of data
             post_data = self.rfile.read(content_length)
             data_dict = json.loads(post_data.decode('utf-8'))
 
-            json.dumps(data_dict)
+            print(data_dict)
             tgeompoint = TGeomPoint.from_mfjson(json.dumps(data_dict))
+
+
 
             sqlString = f"UPDATE public.{collectionId} SET {trip}= merge({trip}, '{tgeompoint}') where {id} = {featureId}"
             cursor.execute(sqlString)
@@ -380,12 +386,12 @@ class MyServer(BaseHTTPRequestHandler):
         except Exception as e:
             self.handle_error(400, str(e))
 
-    def do_delete_feature(self, collection_id, mfeature_id):
+    def do_delete_feature(self, collectionId, mfeature_id):
         columns = self.column_discovery(collectionId)
         id = columns[0][0]
         try:
             print("GET request,\nPath: %s\nHeaders: %s\n" % (self.path, self.headers))
-            sqlString = f"DELETE FROM public.{collection_id} WHERE {id}={mfeature_id}"
+            sqlString = f"DELETE FROM public.{collectionId} WHERE {id}={mfeature_id}"
             cursor.execute(sqlString)
             connection.commit()
 
@@ -397,7 +403,37 @@ class MyServer(BaseHTTPRequestHandler):
                               "Collection or Item does not exist" if "does not exist" in str(
                                   e) else "Server Internal Error")
 
-    def do_delete_single_temporal_primitive_geo(self, collectionId, featureId):
+    def do_delete_single_temporal_primitive_geo(self, collectionId, featureId, tGeometryId):
+        columns = self.column_discovery(collectionId)
+        id = columns[0][0]
+        trip = columns[1][0]
+
+        sql_select_trips = f"SELECT asMFJSON({trip}) FROM public.{collectionId} WHERE  {id}={featureId};"
+        cursor.execute(sql_select_trips)
+        rs = cursor.fetchall()
+        print(tGeometryId)
+
+        data_dict = json.loads(rs[0][0])
+        to_change = data_dict.get("sequences")
+        if to_change:
+            to_change.pop(int(tGeometryId))
+        else:
+            to_change = data_dict.get("coordinates")
+            to_change.pop(int(tGeometryId))
+
+        print(to_change)
+
+        if(len(to_change) == 1):
+            data_dict["coordinates"] = to_change[0]
+        else:
+            data_dict["sequences"] = to_change
+
+        updated_json = json.dumps(data_dict)
+
+        tgeompoint = TGeomPoint.from_mfjson(updated_json)
+        sql_update = f"UPDATE public.{collectionId} SET {trip}= '{tgeompoint}' WHERE {id}={featureId}"
+        cursor.execute(sql_update)
+
 
         self.send_response(200)
         self.send_header("Content-type", "application/json")
