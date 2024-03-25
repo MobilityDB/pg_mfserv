@@ -94,6 +94,12 @@ class MyServer(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(bytes(error_response, "utf-8"))
 
+    def column_discovery(self, collectionId):
+        sqlString = f"SELECT column_name FROM INFORMATION_SCHEMA.COLUMNS where  table_name = '{collectionId}';"
+        cursor.execute(sqlString)
+        rs = cursor.fetchall()
+        return rs
+
     # Base route of the api
     def do_home(self):
         self.send_response(200)
@@ -195,42 +201,31 @@ class MyServer(BaseHTTPRequestHandler):
         parsed_url = urlparse(self.path)
         query_params = parse_qs(parsed_url.query)
         limit = 10 if query_params.get('limit') is None else query_params.get('limit')[0]
-        x1, y1, x2, y2 = query_params.get('x1')[0], query_params.get('y1')[0], query_params.get('x2')[0], \
-            query_params.get('y2')[0]
+        x1, y1, x2, y2 = query_params.get('x1')[0], query_params.get('y1')[0], query_params.get('x2')[0], query_params.get('y2')[0]
         subTrajectory = query_params.get('subTrajectory')[0]
         dateTime = query_params.get('dateTime')
 
         dateTime1 = dateTime[0].split(',')[0]
         dateTime2 = dateTime[0].split(',')[1]
 
-        print("x1:", x1)
-        print("y1:", y1)
-        print("x2:", x2)
-        print("y2:", y2)
-        print("DateTime: ", dateTime1, "  ", dateTime2)
-        print("limit: ", limit)
-        print("subTraj: ", subTrajectory)
-
+        columns = self.column_discovery(collectionId)
+        id = columns[0][0]
+        trip = columns[1][0]
         query = (
-            "SELECT mmsi, asMFJSON(trip) FROM public.{} WHERE atstbox(trip, stbox 'SRID=25832;STBOX XT((({},{}), ({},{})),[{},{}])') IS NOT NULL LIMIT {};").format(
-            collectionId, x1, y1, x2, y2, dateTime1, dateTime2, limit)
-        query_count = (
-            "SELECT count(trip) as count FROM public.{} WHERE atstbox(trip, stbox 'SRID=25832;STBOX XT((({},{}), ({},{})),[{},{}])') IS NOT NULL  ;").format(
-            collectionId, x1, y1, x2, y2, dateTime1, dateTime2)
+            f"SELECT {id}, asMFJSON({trip}), count(trip) OVER() as total_count "
+            f"FROM public.{collectionId} "
+            f"WHERE atstbox(trip, stbox 'SRID=25832;STBOX XT((({x1},{y1}), ({x2},{y2})),[{dateTime1},{dateTime2}])') IS NOT NULL "
+            f"LIMIT {limit};"
+        )
+
         cursor.execute(query)
         row_count = cursor.rowcount
         data = cursor.fetchall()
 
-        # Execute the query to get the count of rows
-        cursor.execute(query_count)
-        # Fetch the result of the count query
-        count_result = cursor.fetchone()
-        # Access the count value from the result
-        total_row_count = count_result[0]
-
+        total_row_count = data[0][2]
         crs = json.loads(data[0][1])["crs"]
-
         features = []
+
         for row in data:
             feature = json.loads(row[1])
             print(feature)
@@ -268,12 +263,12 @@ class MyServer(BaseHTTPRequestHandler):
 
             data_dict = json.loads(post_data.decode('utf-8'))
             mmsi = data_dict.get("id")
-            tempGeo = data_dict.get("temporalGeometry")
+            # tempGeo = data_dict.get("temporalGeometry")
 
-            if tempGeo is None:
-               raise Exception("DataError")
+            # if tempGeo is None:
+            #   raise Exception("DataError")
 
-            tGeomPoint = TGeomPoint.from_mfjson(json.dumps(tempGeo))
+            tGeomPoint = TGeomPoint.from_mfjson(json.dumps(data_dict))
             string_query = f"INSERT INTO public.{collectionId} VALUES({mmsi}, '{tGeomPoint}');"
 
             cursor.execute(string_query)
@@ -328,9 +323,8 @@ class MyServer(BaseHTTPRequestHandler):
 
             limit = 10 if query_params.get('limit') is None else query_params.get('limit')[0]
             x1, y1, x2, y2 = query_params.get('x1', [None])[0], query_params.get('y1', [None])[0], \
-            query_params.get('x2', [None])[0], query_params.get('y2', [None])[0]
+                query_params.get('x2', [None])[0], query_params.get('y2', [None])[0]
             if x1 or y1 or x2 or y2 is None:
-
 
                 sqlString = f"SELECT mmsi, asMFJSON(trip) FROM public.{collectionId} WHERE mmsi={featureId} LIMIT {limit};"
             else:
@@ -341,7 +335,7 @@ class MyServer(BaseHTTPRequestHandler):
                 sqlString = f"SELECT mmsi, asMFJSON(trip) FROM public.{collectionId} WHERE atstbox(trip, stbox 'SRID=25832;STBOX XT((({x1},{y1}), ({x2},{y2})),[{dateTime1},{dateTime2}])') IS NOT NULL AND mmsi={featureId} LIMIT {limit};"
 
             subTrajectory = query_params.get('subTrajectory', [None])[0]
-            leaf = query_params.get('leaf',[None])
+            leaf = query_params.get('leaf', [None])
 
             cursor.execute(sqlString)
 
@@ -390,18 +384,12 @@ class MyServer(BaseHTTPRequestHandler):
             content_length = int(self.headers['Content-Length'])  # <--- Gets the size of data
             post_data = self.rfile.read(content_length)
             data_dict = json.loads(post_data.decode('utf-8'))
-            datetimes = data_dict.get("datetimes")
-            print(datetimes)
 
             json.dumps(data_dict)
             tgeompoint = TGeomPoint.from_mfjson(json.dumps(data_dict))
 
-            print(tgeompoint) #voir si c bon
-
             sqlString = f"UPDATE public.{collectionId} SET trip= merge(trip, '{tgeompoint}') where mmsi = {featureId}"
             cursor.execute(sqlString)
-
-
 
             self.send_response(200)
             self.send_header("Content-type", "application/json")
@@ -410,6 +398,7 @@ class MyServer(BaseHTTPRequestHandler):
             self.handle_error(400, str(e))
 
     def do_delete_single_temporal_primitive_geo(self, collectionId, featureId):
+
         self.send_response(200)
         self.send_header("Content-type", "application/json")
         self.end_headers()
