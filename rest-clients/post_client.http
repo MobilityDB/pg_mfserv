@@ -21,7 +21,7 @@ Content-Type: application/json
   "No data": "invalid data"
 }
 
-### add item to collection
+### add feature to collection
 POST {{baseurl}}/collections/ships/items
 Content-Type: application/json
 
@@ -77,8 +77,8 @@ POST {{baseurl}}/collections/ships/items/25/tgsequence
     ]
   ],
   "datetimes": [
-    "2024-09-05T00:00:01+00",
-    "2024-09-05T23:59:51+00"
+    "2024-09-01T00:00:01+00",
+    "2024-09-02T23:59:51+00"
   ],
   "lower_inc": true,
   "upper_inc": true,
@@ -114,8 +114,8 @@ Content-Type: application/json
     ]
   ],
   "datetimes": [
-    "2024-09-04T00:00:01+00",
-    "2024-09-04T23:59:51+00"
+    "2024-09-05T00:00:01+00",
+    "2024-09-06T23:59:51+00"
   ],
   "lower_inc": true,
   "upper_inc": true,

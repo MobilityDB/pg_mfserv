@@ -1,6 +1,6 @@
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
-import requests
+from utils import column_discovery, send_json_response, column_discovery2
 from pymeos.db.psycopg2 import MobilityDB
 from psycopg2 import sql
 import json
@@ -26,6 +26,8 @@ class MyServer(BaseHTTPRequestHandler):
     def do_GET(self):
         if 'tgsequence' in self.path:
             self.do_get_squence()
+        elif 'tproperties' in self.path:
+            self.do_get_tproperties()
         elif self.path == '/':
             self.do_home()
         elif self.path == '/collections':
@@ -47,6 +49,16 @@ class MyServer(BaseHTTPRequestHandler):
         collection_id = self.path.split('/')[2]
         feature_id = self.path.split('/')[4]
         self.do_get_movement_single_moving_feature(collection_id, feature_id)
+
+    def do_get_tproperties(self):
+        collection_id = self.path.split('/')[2]
+        feature_id = self.path.split('/')[4]
+
+        if self.path.endswith("/tproperties"):
+            self.do_get_set_temporal_data(collection_id,feature_id)
+        else:
+            tpropertyname = self.path.split('/')[6]
+            self.do_get_temporal_property(collection_id, feature_id, tpropertyname)
 
     # POST requests router
     def do_POST(self):
@@ -89,7 +101,7 @@ class MyServer(BaseHTTPRequestHandler):
             collection_id = self.path.split('/')[-1]
             self.do_put_collection(collection_id)
 
-    def handle_error(self, code, message):
+    def handle_error(code, message):
         # Format error information into a JSON string
         error_response = json.dumps({"code": str(code), "description": message})
 
@@ -98,12 +110,6 @@ class MyServer(BaseHTTPRequestHandler):
         self.send_header("Content-type", "application/json")
         self.end_headers()
         self.wfile.write(bytes(error_response, "utf-8"))
-
-    def column_discovery(self, collectionId):
-        sqlString = f"SELECT column_name FROM INFORMATION_SCHEMA.COLUMNS where  table_name = '{collectionId}';"
-        cursor.execute(sqlString)
-        rs = cursor.fetchall()
-        return rs
 
     def do_home(self):
         self.send_response(200)
@@ -212,7 +218,7 @@ class MyServer(BaseHTTPRequestHandler):
         dateTime1 = dateTime[0].split(',')[0]
         dateTime2 = dateTime[0].split(',')[1]
 
-        columns = self.column_discovery(collectionId)
+        columns = column_discovery(collectionId,cursor)
         id = columns[0][0]
         trip = columns[1][0]
 
@@ -255,14 +261,11 @@ class MyServer(BaseHTTPRequestHandler):
         geojson_string = json.dumps(geojson_data)
 
         # Define the coordinates of the polygon's vertices
-        self.send_response(200)
-        self.send_header("Content-type", "application/json")
-        self.end_headers()
-        self.wfile.write(geojson_string.encode('utf-8'))
+        send_json_response(self,200, geojson_string)
 
     def do_get_meta_data(self, collectionId, featureId):
         print("GET request,\nPath: %s\nHeaders: %s\n" % (self.path, self.headers))
-        columns = self.column_discovery(collectionId)
+        columns = column_discovery(collectionId, cursor)
         id = columns[0][0]
         trip = columns[1][0]
 
@@ -273,19 +276,20 @@ class MyServer(BaseHTTPRequestHandler):
             rs = cursor.fetchall()
             if len(rs) == 0:
                 raise Exception("feature does not exist")
+
             data = json.loads(rs[0][0])
 
-            self.send_response(200)
-            self.send_header("Content-type", "application/json")
-            self.end_headers()
-            self.wfile.write(bytes(json.dumps(data), 'utf-8'))
+            json_data = json.dumps(data)
+
+            send_json_response(self,200,json_data)
+
         except Exception as e:
             self.handle_error(404 if "does not exist" in str(e) else 500,
                               "Collection or Feature does not exist" if "does not exist" in str(
                                   e) else str(e))
 
     def do_get_movement_single_moving_feature(self, collectionId, featureId):
-        columns = self.column_discovery(collectionId)
+        columns = column_discovery(collectionId, cursor)
         id = columns[0][0]
         trip = columns[1][0]
         try:
@@ -295,7 +299,7 @@ class MyServer(BaseHTTPRequestHandler):
             x1, y1, x2, y2 = query_params.get('x1', [None])[0], query_params.get('y1', [None])[0], \
                 query_params.get('x2', [None])[0], query_params.get('y2', [None])[0]
             if x1 or y1 or x2 or y2 is None:
-                sqlString = f"SELECT {id}, asMFJSON({trip}) FROM public.{collectionId} WHERE  {id}={featureId} LIMIT {limit};"
+                sqlString = f"SELECT {id}, {trip} FROM public.{collectionId} WHERE  {id}={featureId} LIMIT {limit};"
             else:
                 dateTime = query_params.get('dateTime')
                 dateTime1 = dateTime[0].split(',')[0]
@@ -308,26 +312,21 @@ class MyServer(BaseHTTPRequestHandler):
 
             cursor.execute(sqlString)
             rs = cursor.fetchall()
-
             movements = []
             for row in rs:
-                json_data = json.loads(row[1])  # Assuming the JSON data is in the second column of each row
+                json_data = row[1].as_mfjson()  # Assuming the JSON data is in the second column of each row
+                json_data = json.loads(json_data)
                 movements.append(json_data)
 
             full_json = {
                 "type": "TemporalGeometrySequence",
-                "geometrySequence": [
-                    movements
-                ],
+                "geometrySequence": movements,
                 "timeStamp": "2021-09-01T12:00:00Z",
                 "numberMatched": 100,
                 "numberReturned": 1
             }
-
-            self.send_response(200)
-            self.send_header("Content-type", "application/json")
-            self.end_headers()
-            self.wfile.write(json.dumps(full_json).encode('utf-8'))
+            json_data = json.dumps(full_json)
+            send_json_response(self, 200, json_data)
             return full_json
 
         except Exception as e:
@@ -349,6 +348,7 @@ class MyServer(BaseHTTPRequestHandler):
                raise Exception("DataError")
 
             tGeomPoint = TGeomPoint.from_mfjson(json.dumps(tempGeo))
+
             string_query = f"INSERT INTO public.{collectionId} VALUES({feat_id}, '{tGeomPoint}');"
 
             cursor.execute(string_query)
@@ -362,7 +362,7 @@ class MyServer(BaseHTTPRequestHandler):
             self.handle_error(400 if "DataError" in str(e) else 404 if "does not exist" in str(e) else 500, str(e))
 
     def do_add_movement_data_in_mf(self, collectionId, featureId):
-        columns = self.column_discovery(collectionId)
+        columns = column_discovery(collectionId, cursor)
         id = columns[0][0]
         trip = columns[1][0]
 
@@ -379,6 +379,7 @@ class MyServer(BaseHTTPRequestHandler):
 
             sqlString = f"UPDATE public.{collectionId} SET {trip}= merge({trip}, '{tgeompoint}') where {id} = {featureId}"
             cursor.execute(sqlString)
+            connection.commit()
 
             self.send_response(200)
             self.send_header("Content-type", "application/json")
@@ -387,7 +388,7 @@ class MyServer(BaseHTTPRequestHandler):
             self.handle_error(400, str(e))
 
     def do_delete_feature(self, collectionId, mfeature_id):
-        columns = self.column_discovery(collectionId)
+        columns = column_discovery(collectionId, cursor)
         id = columns[0][0]
         try:
             print("GET request,\nPath: %s\nHeaders: %s\n" % (self.path, self.headers))
@@ -404,12 +405,13 @@ class MyServer(BaseHTTPRequestHandler):
                                   e) else "Server Internal Error")
 
     def do_delete_single_temporal_primitive_geo(self, collectionId, featureId, tGeometryId):
-        columns = self.column_discovery(collectionId)
+        columns = column_discovery(collectionId, cursor)
         id = columns[0][0]
         trip = columns[1][0]
 
         sql_select_trips = f"SELECT asMFJSON({trip}) FROM public.{collectionId} WHERE  {id}={featureId};"
         cursor.execute(sql_select_trips)
+        connection.commit()
         rs = cursor.fetchall()
         print(tGeometryId)
 
@@ -429,17 +431,44 @@ class MyServer(BaseHTTPRequestHandler):
             data_dict["sequences"] = to_change
 
         updated_json = json.dumps(data_dict)
-
         tgeompoint = TGeomPoint.from_mfjson(updated_json)
         sql_update = f"UPDATE public.{collectionId} SET {trip}= '{tgeompoint}' WHERE {id}={featureId}"
         cursor.execute(sql_update)
-
 
         self.send_response(200)
         self.send_header("Content-type", "application/json")
         self.end_headers()
 
+    # Not functional yet
+    
+    def do_get_set_temporal_data(self, collectionId, featureId):
+        columns = column_discovery2(collectionId, cursor)
+        id = columns[0][0]
+        trip = columns[1][0]
+        print(columns)
+        sqlString = f"SELECT asMFJSON({trip}) FROM public.{collectionId} WHERE {id} = {featureId} "
+        cursor.execute(sqlString)
+        rs = cursor.fetchall()
+        print(rs[0][0])
+        data = json.loads(rs[0][0])
+        datetimes = data.get("datetimes")
+        json_data = json.dumps(datetimes)
 
+        send_json_response(self,200,json_data)
+        return
+    
+
+    # Not functional yet
+    
+    def do_get_temporal_property(self,collectionId, featureId, propertyName):
+        sqlString = f"SELECT asMFJSON({trip}) FROM public.{collectionId} WHERE {id} = {featureId} "
+        cursor.execute(sqlString)
+        rs = cursor.fetchall()
+        print(rs[0][0])
+        data = json.loads(rs[0][0])
+        temporal_property = data.get(f"{propertyName}")
+    
+    
 if __name__ == "__main__":
     webServer = HTTPServer((hostName, serverPort), MyServer)
     print("Server started http://%s:%s" % (hostName, serverPort))

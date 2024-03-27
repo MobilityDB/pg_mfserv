@@ -7,4 +7,4 @@ DELETE {{baseurl}}/collections/moving_humans
 DELETE {{baseurl}}/collections/ships/items/25
 
 ### delete movement about a single feature
-DELETE {{baseurl}}/collections/ships/items/25/tgsequence
+DELETE {{baseurl}}/collections/ships/items/25/tgsequence/0
