@@ -101,7 +101,7 @@ class MyServer(BaseHTTPRequestHandler):
             collection_id = self.path.split('/')[-1]
             self.do_put_collection(collection_id)
 
-    def handle_error(code, message):
+    def handle_error(self,code, message):
         # Format error information into a JSON string
         error_response = json.dumps({"code": str(code), "description": message})
 
@@ -439,36 +439,49 @@ class MyServer(BaseHTTPRequestHandler):
         self.send_header("Content-type", "application/json")
         self.end_headers()
 
-    # Not functional yet
-    
     def do_get_set_temporal_data(self, collectionId, featureId):
         columns = column_discovery2(collectionId, cursor)
         id = columns[0][0]
         trip = columns[1][0]
-        print(columns)
-        sqlString = f"SELECT asMFJSON({trip}) FROM public.{collectionId} WHERE {id} = {featureId} "
-        cursor.execute(sqlString)
+
+        string = f"SELECT "
+
+        for i in range(2,len(columns)):
+            string+= columns[i][0] + ","
+
+        string = string.rstrip(",")
+        string += f" FROM public.{collectionId} WHERE {id} = {featureId}"
+        cursor.execute(string)
         rs = cursor.fetchall()
-        print(rs[0][0])
-        data = json.loads(rs[0][0])
-        datetimes = data.get("datetimes")
-        json_data = json.dumps(datetimes)
 
-        send_json_response(self,200,json_data)
+        tab = []
+        for element in rs[0]:
+            mf_json = element.as_mfjson()
+
+            tab.append(json.loads(mf_json))
+        print(tab)
+        json_data = {
+            "temporalProperties": tab,
+            "timeStamp": "2021-09-01T12:00:00Z",
+            "numberMatched": 10,
+            "numberReturned": 2
+        }
+
+        send_json_response(self,200,json.dumps(json_data))
+
         return
-    
 
-    # Not functional yet
-    
     def do_get_temporal_property(self,collectionId, featureId, propertyName):
+        columns = column_discovery2(collectionId, cursor)
+        id = columns[0][0]
+        trip = columns[1][0]
         sqlString = f"SELECT asMFJSON({trip}) FROM public.{collectionId} WHERE {id} = {featureId} "
         cursor.execute(sqlString)
         rs = cursor.fetchall()
         print(rs[0][0])
         data = json.loads(rs[0][0])
         temporal_property = data.get(f"{propertyName}")
-    
-    
+
 if __name__ == "__main__":
     webServer = HTTPServer((hostName, serverPort), MyServer)
     print("Server started http://%s:%s" % (hostName, serverPort))
@@ -483,3 +496,4 @@ if __name__ == "__main__":
     pymeos_finalize()
     webServer.server_close()
     print("Server stopped.")
+
