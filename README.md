@@ -23,16 +23,23 @@ This Python API server provides endpoints for interacting with MobilityDB, a tem
 
 To install and run the server, follow these steps:
 
-1. Download the server.py and utils.py file in the same folder
-2. Dowload the rest-clients
-3. Install [PyMEOS](https://github.com/MobilityDB/PyMEOS)
-4. Run the server :
+1. Download the server.py and utils.py file in the same folder.
+2. Dowload the rest-clients and change the queries to match your MOBILITYDB collections.
+3. Change the connection parameters in the server.py file.
+4. Install [PyMEOS](https://github.com/MobilityDB/PyMEOS)
+5. Run the server :
     ```bash
     python3 server.py
-5. Enjoy !
+6. Enjoy !
+
 ## Usage
 
 Send http requests to the api using any http service.
+
+As an example, your can use the ais.sql that will create ships and ship2 tables containing ships data.
+To do that you will have to change the path in the script to the path of your .csv file.
+ 
+Here is a link to download ships datasets: [Denmark Ships DataSets](https://web.ais.dk/aisdata/)
 
 ## Developement
 
